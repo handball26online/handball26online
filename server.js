@@ -15,6 +15,8 @@ const { WebSocketServer } = require("ws");
 const PORT = process.env.PORT || 8080;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // no 0/O, 1/I
 const ROOM_TTL_MS = 15 * 60 * 1000;                       // a room nobody joined is deleted after 15 minutes
+const NAME_MAX = 12;                                      // longest host name shown in the room list
+const LIST_MAX = 50;                                      // most rooms sent in one list
 
 let ICE = [{ urls: ["stun:stun.l.google.com:19302"] }];
 if (process.env.ICE_SERVERS) {
@@ -36,6 +38,10 @@ const rooms = new Map();   // code -> { host: ws, client: ws|null, timer }
 
 function send(ws, obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+function cleanName(v) {
+  return String(v == null ? "" : v).replace(/[\u0000-\u001f]/g, "").trim().slice(0, NAME_MAX);
 }
 
 function newCode() {
@@ -69,7 +75,8 @@ wss.on("connection", (ws) => {
     if (msg.t === "host" && !ws.room) {
       const code = newCode();
       if (!code) return send(ws, { t: "error", msg: "No free room code, try again." });
-      const room = { host: ws, client: null, timer: null };
+      // msg.public === true: the room is shown in the room list (anybody can join without the code)
+      const room = { host: ws, client: null, timer: null, isPublic: msg.public === true, name: cleanName(msg.name) };
       room.timer = setTimeout(() => {
         send(room.host, { t: "error", msg: "The room expired (nobody joined in 15 minutes)." });
         deleteRoom(code);
@@ -77,7 +84,16 @@ wss.on("connection", (ws) => {
       rooms.set(code, room);
       ws.room = code;
       ws.role = "host";
-      send(ws, { t: "hosted", code });
+      send(ws, { t: "hosted", code, public: room.isPublic });
+
+    } else if (msg.t === "list" && !ws.room) {
+      // the public rooms that still wait for a player
+      const list = [];
+      for (const [code, room] of rooms) {
+        if (room.isPublic && !room.client) list.push({ code, name: room.name });
+        if (list.length >= LIST_MAX) break;
+      }
+      send(ws, { t: "rooms", rooms: list });
 
     } else if (msg.t === "join" && !ws.room) {
       const code = String(msg.code || "").trim().toUpperCase();
