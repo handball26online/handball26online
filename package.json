@@ -1,0 +1,9 @@
+{
+  "name": "handball-signaling",
+  "version": "1.0.0",
+  "description": "Matchmaking (signaling) server for the handball game: rooms with a code, passes WebRTC offers / answers / ICE candidates between two players",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
